@@ -156,12 +156,12 @@ class ITMOChatBot:
 
         profile = self.user_profiles.get(user_id, UserProfile())
 
-        comparison = f"🔍 **Сравнение программ магистратуры ИТМО:**\n\n"
+        comparison = f"🔍 Сравнение программ магистратуры ИТМО:\n\n"
 
         programs = list(self.programs_data.items())
 
         for i, (prog_name, prog_data) in enumerate(programs, 1):
-            comparison += f"**{i}. {prog_name}**\n"
+            comparison += f"{i}. {prog_name}\n"
             comparison += f"• Описание: {prog_data.get('description', 'Не указано')[:100]}...\n"
 
             # Показываем количество дисциплин если есть curriculum
@@ -180,7 +180,7 @@ class ITMOChatBot:
             comparison += "\n"
 
         if profile.background:
-            comparison += "💡 **Рекомендация основана на вашем профиле**\n"
+            comparison += "💡 Рекомендация основана на вашем профиле\n"
         else:
             comparison += "💡 Настройте профиль (/profile) для персональных рекомендаций\n"
 
@@ -215,6 +215,24 @@ class ITMOChatBot:
 
         return min(100, max(0, score))
 
+    def clean_text_for_telegram(self, text: str) -> str:
+        """Очищает текст от символов, которые могут вызвать ошибки парсинга в Telegram"""
+        if not text:
+            return text
+
+        # Убираем все потенциально проблемные символы
+        # Заменяем на безопасные аналоги или убираем
+        cleaned = text.replace('*', '').replace('_', '').replace('[', '').replace(']', '')
+        cleaned = cleaned.replace('`', '').replace('~', '').replace('>', '').replace('<', '')
+        cleaned = cleaned.replace('{', '').replace('}', '').replace('|', '').replace('\\', '')
+        cleaned = cleaned.replace('#', '').replace('+', '').replace('-', ' ').replace('=', '')
+        cleaned = cleaned.replace('!', '').replace('^', '').replace('&', 'и').replace('%', 'процентов')
+
+        # Убираем множественные пробелы
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+        return cleaned
+
     def get_recommendations(self, user_id: int) -> str:
         """Генерирует персонализированные рекомендации на основе реальных данных"""
         profile = self.user_profiles.get(user_id, UserProfile())
@@ -223,7 +241,7 @@ class ITMOChatBot:
             return ("Для получения персонализированных рекомендаций, пожалуйста, "
                    "расскажите о своем бэкграунде с помощью команды /profile")
 
-        recommendations = f"🎯 *Персональные рекомендации для вас:*\n\n"
+        recommendations = f"🎯 Персональные рекомендации для вас:\n\n"
 
         # Ищем программу с curriculum для рекомендаций
         program_with_curriculum = None
@@ -237,29 +255,36 @@ class ITMOChatBot:
             try:
                 recs = generate_recommendations(profile.background, program_with_curriculum['curriculum'])
 
-                recommendations += f"👤 *Определенный профиль:* {recs.get('user_profile', 'Не определен')}\n"
+                # Очищаем все текстовые данные
+                user_profile = self.clean_text_for_telegram(recs.get('user_profile', 'Не определен'))
+                recommendations += f"👤 Определенный профиль: {user_profile}\n"
 
                 # Показываем найденные ключевые слова
                 matched_keywords = recs.get('matched_keywords', [])
                 if matched_keywords:
-                    keywords_text = ', '.join(matched_keywords[:5])
-                    recommendations += f"🔍 *Найденные ключевые слова:* {keywords_text}\n"
+                    # Очищаем ключевые слова
+                    clean_keywords = [self.clean_text_for_telegram(kw) for kw in matched_keywords[:5]]
+                    keywords_text = ', '.join(clean_keywords)
+                    recommendations += f"🔍 Найденные ключевые слова: {keywords_text}\n"
 
                 recommendations += "\n"
 
-                recommendations += "📚 *Рекомендуемые дисциплины:*\n"
+                recommendations += "📚 Рекомендуемые дисциплины:\n"
                 for i, rec in enumerate(recs.get('recommendations', [])[:8], 1):
                     priority_icon = "⭐" if rec.get('priority', 0) >= 3 else "📖"
-                    # Экранируем специальные символы в названии дисциплины
-                    course_name = rec['name'].replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)')
-                    recommendations += f"{i}. {priority_icon} *{course_name}* ({rec['credits']} кредитов)\n"
-                    recommendations += f"   📂 Категория: {rec['category']}\n"
-                    recommendations += f"   💡 {rec['reason']}\n\n"
+                    # Очищаем название курса от проблемных символов
+                    course_name = self.clean_text_for_telegram(rec['name'])
+                    category = self.clean_text_for_telegram(rec['category'])
+                    reason = self.clean_text_for_telegram(rec['reason'])
+
+                    recommendations += f"{i}. {priority_icon} {course_name} ({rec['credits']} кредитов)\n"
+                    recommendations += f"   📂 Категория: {category}\n"
+                    recommendations += f"   💡 {reason}\n\n"
 
                 # Анализ и статистика
                 analysis = recs.get('analysis', {})
                 if analysis:
-                    recommendations += "📊 *Анализ учебного плана:*\n"
+                    recommendations += "📊 Анализ учебного плана:\n"
                     recommendations += f"• Всего дисциплин: {analysis.get('total_courses', 0)}\n"
                     recommendations += f"• Выборных дисциплин: {analysis.get('elective_courses', 0)}\n"
                     recommendations += f"• Найдено категорий: {analysis.get('categories_found', 0)}\n\n"
@@ -269,9 +294,10 @@ class ITMOChatBot:
                 if cat_dist:
                     # Сортируем категории по количеству дисциплин
                     sorted_categories = sorted(cat_dist.items(), key=lambda x: x[1], reverse=True)
-                    top_categories = [f"{cat}: {count}" for cat, count in sorted_categories[:5] if count > 0]
+                    # Очищаем названия категорий
+                    top_categories = [f"{self.clean_text_for_telegram(cat)}: {count}" for cat, count in sorted_categories[:5] if count > 0]
                     if top_categories:
-                        recommendations += "🏆 *Топ категории дисциплин:*\n"
+                        recommendations += "🏆 Топ категории дисциплин:\n"
                         recommendations += f"• {' • '.join(top_categories)}\n"
 
             except Exception as e:
@@ -302,7 +328,7 @@ class ITMOChatBot:
             "Что вы хотите узнать?"
         )
 
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик нажатий на кнопки"""
@@ -311,7 +337,7 @@ class ITMOChatBot:
 
         if query.data == "compare":
             comparison = self.get_program_comparison(query.from_user.id)
-            await query.edit_message_text(comparison, parse_mode='Markdown')
+            await query.edit_message_text(comparison)
 
         elif query.data == "ask_question":
             await query.edit_message_text(
@@ -322,7 +348,6 @@ class ITMOChatBot:
                 "• Сколько стоит обучение?\n"
                 "• Какие карьерные возможности?\n\n"
                 "Просто напишите ваш вопрос в следующем сообщении.",
-                parse_mode='Markdown'
             )
 
         elif query.data == "setup_profile":
@@ -333,11 +358,11 @@ class ITMOChatBot:
                 "**Команда:** `/profile ваш_бэкграунд`\n\n"
                 f"{examples_text}"
             )
-            await query.edit_message_text(profile_message, parse_mode='Markdown')
+            await query.edit_message_text(profile_message)
 
         elif query.data == "get_recommendations":
             recommendations = self.get_recommendations(query.from_user.id)
-            await query.edit_message_text(recommendations, parse_mode='Markdown')
+            await query.edit_message_text(recommendations)
 
     async def profile_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /profile"""
@@ -347,7 +372,6 @@ class ITMOChatBot:
             await update.message.reply_text(
                 "Пожалуйста, укажите ваш бэкграунд после команды.\n"
                 "Например: `/profile Я программист на Python с опытом 3 года`",
-                parse_mode='Markdown'
             )
             return
 
@@ -362,13 +386,12 @@ class ITMOChatBot:
             f"✅ **Профиль обновлен!**\n\n"
             f"Ваш бэкграунд: {background}\n\n"
             f"Теперь вы можете получить персонализированные рекомендации с помощью кнопки 'Получить рекомендации' или команды /recommendations",
-            parse_mode='Markdown'
         )
 
     async def recommendations_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /recommendations"""
         recommendations = self.get_recommendations(update.effective_user.id)
-        await update.message.reply_text(recommendations, parse_mode='Markdown')
+        await update.message.reply_text(recommendations)
 
     async def message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик текстовых сообщений (вопросов пользователя)"""
@@ -383,7 +406,6 @@ class ITMOChatBot:
                 "• Карьерных возможностях\n"
                 "• Стоимости и стипендиях\n"
                 "• Особенностях обучения",
-                parse_mode='Markdown'
             )
             return
 
@@ -415,7 +437,7 @@ class ITMOChatBot:
                 "Или обратитесь к менеджерам программ ИТМО"
             )
 
-        await update.message.reply_text(response, parse_mode='Markdown')
+        await update.message.reply_text(response)
 
     async def help_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /help"""
@@ -439,7 +461,7 @@ class ITMOChatBot:
             "Просто задавайте вопросы или используйте кнопки!"
         )
 
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text)
 
     def run(self):
         """Запуск бота"""
