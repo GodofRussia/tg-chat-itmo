@@ -6,7 +6,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 import difflib
 from dataclasses import dataclass
-from final_parser import generate_recommendations, categorize_subjects
+from final_parser import generate_recommendations, categorize_subjects, get_profile_examples
 
 # Настройка логирования
 logging.basicConfig(
@@ -223,7 +223,7 @@ class ITMOChatBot:
             return ("Для получения персонализированных рекомендаций, пожалуйста, "
                    "расскажите о своем бэкграунде с помощью команды /profile")
 
-        recommendations = f"🎯 **Персональные рекомендации для вас:**\n\n"
+        recommendations = f"🎯 *Персональные рекомендации для вас:*\n\n"
 
         # Ищем программу с curriculum для рекомендаций
         program_with_curriculum = None
@@ -237,26 +237,29 @@ class ITMOChatBot:
             try:
                 recs = generate_recommendations(profile.background, program_with_curriculum['curriculum'])
 
-                recommendations += f"👤 **Определенный профиль:** {recs.get('user_profile', 'Не определен')}\n"
+                recommendations += f"👤 *Определенный профиль:* {recs.get('user_profile', 'Не определен')}\n"
 
                 # Показываем найденные ключевые слова
                 matched_keywords = recs.get('matched_keywords', [])
                 if matched_keywords:
-                    recommendations += f"🔍 **Найденные ключевые слова:** {', '.join(matched_keywords[:5])}\n"
+                    keywords_text = ', '.join(matched_keywords[:5])
+                    recommendations += f"🔍 *Найденные ключевые слова:* {keywords_text}\n"
 
                 recommendations += "\n"
 
-                recommendations += "📚 **Рекомендуемые дисциплины:**\n"
+                recommendations += "📚 *Рекомендуемые дисциплины:*\n"
                 for i, rec in enumerate(recs.get('recommendations', [])[:8], 1):
                     priority_icon = "⭐" if rec.get('priority', 0) >= 3 else "📖"
-                    recommendations += f"{i}. {priority_icon} **{rec['name']}** ({rec['credits']} кредитов)\n"
+                    # Экранируем специальные символы в названии дисциплины
+                    course_name = rec['name'].replace('*', '\\*').replace('_', '\\_').replace('[', '\\[').replace(']', '\\]').replace('(', '\\(').replace(')', '\\)')
+                    recommendations += f"{i}. {priority_icon} *{course_name}* ({rec['credits']} кредитов)\n"
                     recommendations += f"   📂 Категория: {rec['category']}\n"
                     recommendations += f"   💡 {rec['reason']}\n\n"
 
                 # Анализ и статистика
                 analysis = recs.get('analysis', {})
                 if analysis:
-                    recommendations += "📊 **Анализ учебного плана:**\n"
+                    recommendations += "📊 *Анализ учебного плана:*\n"
                     recommendations += f"• Всего дисциплин: {analysis.get('total_courses', 0)}\n"
                     recommendations += f"• Выборных дисциплин: {analysis.get('elective_courses', 0)}\n"
                     recommendations += f"• Найдено категорий: {analysis.get('categories_found', 0)}\n\n"
@@ -268,7 +271,7 @@ class ITMOChatBot:
                     sorted_categories = sorted(cat_dist.items(), key=lambda x: x[1], reverse=True)
                     top_categories = [f"{cat}: {count}" for cat, count in sorted_categories[:5] if count > 0]
                     if top_categories:
-                        recommendations += "🏆 **Топ категории дисциплин:**\n"
+                        recommendations += "🏆 *Топ категории дисциплин:*\n"
                         recommendations += f"• {' • '.join(top_categories)}\n"
 
             except Exception as e:
@@ -323,18 +326,14 @@ class ITMOChatBot:
             )
 
         elif query.data == "setup_profile":
-            await query.edit_message_text(
+            examples_text = get_profile_examples()
+            profile_message = (
                 "👤 **Настройка профиля**\n\n"
                 "Расскажите о себе, чтобы получить персонализированные рекомендации:\n\n"
-                "Используйте команду: `/profile ваш_бэкграунд`\n\n"
-                "Например:\n"
-                "`/profile Я программист на Python с опытом 3 года, интересуюсь машинным обучением`\n\n"
-                "или\n\n"
-                "`/profile Работаю продуктовым менеджером, хочу изучить AI для создания продуктов`\n\n"
-                "или\n\n"
-                "`/profile Системный архитектор, интересуют высоконагруженные системы`",
-                parse_mode='Markdown'
+                "**Команда:** `/profile ваш_бэкграунд`\n\n"
+                f"{examples_text}"
             )
+            await query.edit_message_text(profile_message, parse_mode='Markdown')
 
         elif query.data == "get_recommendations":
             recommendations = self.get_recommendations(query.from_user.id)
