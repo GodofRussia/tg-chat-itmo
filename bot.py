@@ -466,7 +466,7 @@ class ITMOChatBot:
 
 if __name__ == "__main__":
     # Замените на ваш токен бота
-    BOT_TOKEN = "8268067812:AAHBkAbew6jPzAbhdOSEQGWMzNiCRxcCFbA"
+    BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
 
     if BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
         print("⚠️  Пожалуйста, укажите токен вашего Telegram бота в переменной BOT_TOKEN")
